@@ -143,11 +143,13 @@ contract PuppyRaffle is ERC721, Ownable {
         // @audit overflow
         // use newer versions of Solidity, which takes cares of underflow and overflow
         // use uint256 instead of uint64
+        // @audit unsafe casting of uint256 to uint64
         totalFees = totalFees + uint64(fee);
 
         uint256 tokenId = totalSupply();
 
         // We use a different RNG calculate from the winnerIndex to determine rarity
+        // @audit randomness
         uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
         if (rarity <= COMMON_RARITY) {
             tokenIdToRarity[tokenId] = COMMON_RARITY;
@@ -160,12 +162,16 @@ contract PuppyRaffle is ERC721, Ownable {
         delete players;
         raffleStartTime = block.timestamp;
         previousWinner = winner;
+        // @audit if winner is a contract and has its fallback() / recieve function messed up, it will damage this function. The winner will get the money and function will struck.
         (bool success,) = winner.call{value: prizePool}("");
         require(success, "PuppyRaffle: Failed to send prize pool to winner");
         _safeMint(winner, tokenId);
     }
 
     /// @notice this function will withdraw the fees to the feeAddress
+    /// q so if there is players in the protocol, someone can't withdraw the fees ?
+    // @audit is it difficult to withdraw fees ?
+    // @audit mishandling of ETH!! Someone can use self.destruct to increase the contract (address(this)) balance and mess this logic
     function withdrawFees() external {
         require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
         uint256 feesToWithdraw = totalFees;
