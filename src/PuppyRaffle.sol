@@ -126,6 +126,9 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @dev we use a hash of on-chain data to generate the random numbers
     /// @dev we reset the active players array after the winner is selected
     /// @dev we send 80% of the funds to the winner, the other 20% goes to the feeAddress
+
+    // @audit randomness
+    // fixes: Chainlink VRF, Commit Reveal Scheme
     function selectWinner() external {
         require(block.timestamp >= raffleStartTime + raffleDuration, "PuppyRaffle: Raffle not over");
         require(players.length >= 4, "PuppyRaffle: Need at least 4 players");
@@ -133,8 +136,13 @@ contract PuppyRaffle is ERC721, Ownable {
             uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
         address winner = players[winnerIndex];
         uint256 totalAmountCollected = players.length * entranceFee;
+        // q is the 80% correct
         uint256 prizePool = (totalAmountCollected * 80) / 100;
         uint256 fee = (totalAmountCollected * 20) / 100;
+        // e this is the tottal fees the owner should be able to collect
+        // @audit overflow
+        // use newer versions of Solidity, which takes cares of underflow and overflow
+        // use uint256 instead of uint64
         totalFees = totalFees + uint64(fee);
 
         uint256 tokenId = totalSupply();
