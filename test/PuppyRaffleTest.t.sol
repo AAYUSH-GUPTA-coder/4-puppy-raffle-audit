@@ -272,6 +272,27 @@ contract PuppyRaffleTest is Test {
         console.log("ending attacker contract balance: ", address(attackerContract).balance);
         console.log("ending contract balance: ", address(puppyRaffle).balance);
     }
+
+    function test_Overflow() public {
+        vm.txGasPrice(1);
+        uint160 playersNum = 100;
+        address[] memory newPlayers = new address[](playersNum);
+        for (uint160 i; i < playersNum; i++) {
+            newPlayers[i] = address(i);
+        }
+
+        puppyRaffle.enterRaffle{value: entranceFee * playersNum}(newPlayers);
+
+        vm.warp(block.timestamp + duration + 100);
+
+        puppyRaffle.selectWinner();
+        uint256 totalFees = puppyRaffle.totalFees();
+        console.log("totalFees:", totalFees);
+        // TotalFees should be 20 eth
+        // instead we get 1553255926290448384 == 1.55 eth
+        // which confirms the overflow error
+        assertTrue(totalFees < 20 ether, "Value should be equal to 20");
+    }
 }
 
 contract ReentrancyAttacker {
