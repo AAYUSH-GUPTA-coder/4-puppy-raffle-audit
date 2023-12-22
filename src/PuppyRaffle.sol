@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.7.6;
-// @audit-info use of floating pragma is bad!
-// @auidt-info also.. why are you using 0.7 ??
+// @audit-info use of floating pragma is bad! - report written
+// @auidt-info also.. why are you using 0.7 ?? - report written
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -23,7 +23,7 @@ contract PuppyRaffle is ERC721, Ownable {
     uint256 public immutable entranceFee;
 
     address[] public players;
-    // @audit-gas raffleDuration should be immutable
+    // @audit-gas raffleDuration should be immutable - report written
     uint256 public raffleDuration;
     uint256 public raffleStartTime;
     address public previousWinner;
@@ -38,19 +38,19 @@ contract PuppyRaffle is ERC721, Ownable {
     mapping(uint256 => string) public rarityToName;
 
     // Stats for the common puppy (pug)
-    // @audit-gas should be constant!
+    // @audit-gas should be constant! - report written
     string private commonImageUri = "ipfs://QmSsYRx3LpDAb1GZQm7zZ1AuHZjfbPkD6J7s9r41xu1mf8";
     uint256 public constant COMMON_RARITY = 70;
     string private constant COMMON = "common";
 
     // Stats for the rare puppy (st. bernard)
-    // @audit-gas should be constant!
+    // @audit-gas should be constant! - report written
     string private rareImageUri = "ipfs://QmUPjADFGEKmfohdTaNcWhp7VGk26h5jXDA7v3VtTnTLcW";
     uint256 public constant RARE_RARITY = 25;
     string private constant RARE = "rare";
 
     // Stats for the legendary puppy (shiba inu)
-    // @audit-gas should be constant!
+    // @audit-gas should be constant! - report written
     string private legendaryImageUri = "ipfs://QmYx6GsYAKnNzZ9A6NvEKV9nf1VaDzJrqDR23Y8YSkebLU";
     uint256 public constant LEGENDARY_RARITY = 5;
     string private constant LEGENDARY = "legendary";
@@ -64,7 +64,7 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param _feeAddress the address to send the fees to
     /// @param _raffleDuration the duration in seconds of the raffle
     constructor(uint256 _entranceFee, address _feeAddress, uint256 _raffleDuration) ERC721("Puppy Raffle", "PR") {
-        // @audit-info check for zero address!
+        // @audit-info check for zero address! - report written
         entranceFee = _entranceFee;
         feeAddress = _feeAddress;
         raffleDuration = _raffleDuration;
@@ -85,15 +85,15 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param newPlayers the list of players to enter the raffle
 
     // @audit add check for size of array newPlayers
-    // @audit-gas uint256 playerLength = players.length, use cache instead of storage
     function enterRaffle(address[] memory newPlayers) public payable {
         require(msg.value == entranceFee * newPlayers.length, "PuppyRaffle: Must send enough to enter raffle");
+        // @audit-gas uint256 playerLength = players.length, use cache instead of storage - report written
         for (uint256 i = 0; i < newPlayers.length; i++) {
             players.push(newPlayers[i]);
         }
 
         // Check for duplicates
-        // @audit Dos
+        // @audit Dos - Denial of service - report written
         for (uint256 i = 0; i < players.length - 1; i++) {
             for (uint256 j = i + 1; j < players.length; j++) {
                 require(players[i] != players[j], "PuppyRaffle: Duplicate player");
@@ -105,11 +105,12 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param playerIndex the index of the player to refund. You can find it externally by calling `getActivePlayerIndex`
     /// @dev This function will allow there to be blank spots in the array
     function refund(uint256 playerIndex) public {
+        // Written-skipped MEV
         address playerAddress = players[playerIndex];
         require(playerAddress == msg.sender, "PuppyRaffle: Only the player can refund");
         require(playerAddress != address(0), "PuppyRaffle: Player already refunded, or is not active");
 
-        // @audit Reentrancy
+        // @audit Reentrancy - report written
         payable(msg.sender).sendValue(entranceFee);
 
         players[playerIndex] = address(0);
@@ -119,6 +120,7 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @notice a way to get the index in the array
     /// @param player the address of a player in the raffle
     /// @return the index of the player in the array, if they are not active, it returns 0
+
     function getActivePlayerIndex(address player) external view returns (uint256) {
         for (uint256 i = 0; i < players.length; i++) {
             if (players[i] == player) {
@@ -126,7 +128,7 @@ contract PuppyRaffle is ERC721, Ownable {
             }
         }
         // q what if player is at index 0
-        // @audit if player is at index 0, it will return 0 and system might think they are not active.
+        // @audit if player is at index 0, it will return 0 and system might think they are not active. - report written
         return 0;
     }
 
@@ -140,6 +142,7 @@ contract PuppyRaffle is ERC721, Ownable {
     // @audit randomness
     // fixes: Chainlink VRF, Commit Reveal Scheme
     function selectWinner() external {
+        // @audit - recommend to follow CEI - report written
         require(block.timestamp >= raffleStartTime + raffleDuration, "PuppyRaffle: Raffle not over");
         require(players.length >= 4, "PuppyRaffle: Need at least 4 players");
         uint256 winnerIndex =
