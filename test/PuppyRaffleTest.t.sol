@@ -282,12 +282,17 @@ contract PuppyRaffleTest is Test {
         }
 
         puppyRaffle.enterRaffle{value: entranceFee * playersNum}(newPlayers);
-
+        uint256 totalAmountCollected =  entranceFee * playersNum;
+        uint256 expectedFees = (totalAmountCollected * 20) / 100;
         vm.warp(block.timestamp + duration + 100);
 
         puppyRaffle.selectWinner();
         uint256 totalFees = puppyRaffle.totalFees();
         console.log("totalFees:", totalFees);
+        console.log("expectedFees:", expectedFees);
+        console.log("Difference: ", expectedFees - totalFees);
+        assertTrue(totalFees != expectedFees, "Values should be equal");
+        
         // TotalFees should be 20 eth
         // instead we get 1553255926290448384 == 1.55 eth
         // which confirms the overflow error
