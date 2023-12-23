@@ -150,20 +150,20 @@ contract PuppyRaffle is ERC721, Ownable {
         address winner = players[winnerIndex];
         uint256 totalAmountCollected = players.length * entranceFee;
         // q is the 80% correct
-        // @audit magic numbers
+        // @audit magic numbers - report written
         uint256 prizePool = (totalAmountCollected * 80) / 100;
         uint256 fee = (totalAmountCollected * 20) / 100;
         // e this is the tottal fees the owner should be able to collect
-        // @audit overflow
+        // @audit overflow - report written
         // use newer versions of Solidity version, which takes cares of underflow and overflow
         // use uint256 instead of uint64
-        // @audit unsafe casting of uint256 to uint64
+        // @audit unsafe casting of uint256 to uint64 - report written
         totalFees = totalFees + uint64(fee);
 
         uint256 tokenId = totalSupply();
 
         // We use a different RNG calculate from the winnerIndex to determine rarity
-        // @audit randomness
+        // @audit randomness - REPORT WRITTEN
         uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
         if (rarity <= COMMON_RARITY) {
             tokenIdToRarity[tokenId] = COMMON_RARITY;
@@ -176,7 +176,7 @@ contract PuppyRaffle is ERC721, Ownable {
         delete players;
         raffleStartTime = block.timestamp;
         previousWinner = winner;
-        // @audit if winner is a contract and has its fallback() / recieve function messed up, it will damage this function. The winner will get the money and function will struck.
+        // @audit if winner is a contract and has its fallback() / recieve function messed up, it will damage this function. The winner will get the money and function will struck.- Report written
         (bool success,) = winner.call{value: prizePool}("");
         require(success, "PuppyRaffle: Failed to send prize pool to winner");
         _safeMint(winner, tokenId);
@@ -185,8 +185,8 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @notice this function will withdraw the fees to the feeAddress
     /// q so if there is players in the protocol, someone can't withdraw the fees ?
     function withdrawFees() external {
-        // @audit is it difficult to withdraw fees, if there are players ?
-        // @audit mishandling of ETH!! Someone can use self.destruct to increase the contract (address(this)) balance and mess this logic
+        // @Skipped-report-audit is it difficult to withdraw fees, if there are players (MEV)
+        // @audit mishandling of ETH!! Someone can use self.destruct to increase the contract (address(this)) balance and mess this logic - Report written
         require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
         uint256 feesToWithdraw = totalFees;
         totalFees = 0;
@@ -197,17 +197,14 @@ contract PuppyRaffle is ERC721, Ownable {
 
     /// @notice only the owner of the contract can change the feeAddress
     /// @param newFeeAddress the new address to send fees to
-    // @audit are we missing some events ?
+    // @audit are we missing some events ? - Report written
     function changeFeeAddress(address newFeeAddress) external onlyOwner {
         feeAddress = newFeeAddress;
         emit FeeAddressChanged(newFeeAddress);
     }
 
     /// @notice this function will return true if the msg.sender is an active player
-    // @audit It is not being anywhere
-    // Impact : None
-    // Likilihood : None
-    // ... but it is a waste of gas, exploit I/G
+    // @audit It is not being used anywhere - report written
     function _isActivePlayer() internal view returns (bool) {
         for (uint256 i = 0; i < players.length; i++) {
             if (players[i] == msg.sender) {
