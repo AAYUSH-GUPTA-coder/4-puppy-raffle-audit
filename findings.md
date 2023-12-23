@@ -1,3 +1,4 @@
+# High
 ### [H-1] Reentrancy Attack in `PuppyRaffle:: refund` allows entrant to drain raffle balance
 
 **Description:** The `PuppyRaffle::refund` function doe not follow CEI (Checks, Effects, Interactions) and as a result, enables participants to drain the contract balance.
@@ -222,6 +223,7 @@ There are more attack vectors with that final require, so we recommend removing 
 
 
 
+# Medium
 ### [M-1] Looping through players array to check for duplicates in `PuppyRaffle::enterRaffle` is a potential denial of service (DoS) attack, incrementing gas costs for future entrants.
 
 **Description:** The `PuppyRaffle::enterRaffle` function loops through the `players` array to check for duplicates. However, the longer the `PuppyRaffle::Players` array is, the more checks a new player will have to make. This means the gas costs for players who enter right when the raffle stats will be dramatically lower than those whose enter later. Every Additional address in the `players` array, is an aadditional check the loop will have to make.
@@ -438,6 +440,30 @@ Also, true winners would not get paid out and someone else could take their mone
 
 You could also reserve the 0th position for any competition, but a better solution might be to return as `int256` where the function returns -1 if the player is not active.
 
+# Gas
+### [G-1] Unchanged state variables should be declared constant or immutable.
+
+Reading from storage is much more expensive than reading from a constant or immutable variable.
+
+Instances:
+- `PuppyRaffle::raffleDuration` should be `immutable`
+- `PuppyRaffle::commonImageUri` should be `constant`
+- `PuppyRaffle::rareImageUri` should be `constant`
+- `PuppyRaffle::legendaryImageUri` should be `constant`
+
+### [G-2] Storage variable in a loop should be cached
+
+Everytime you call `players.length` you read from storage, as opposed to memory which is more gas efficient.
+
+```diff
++   uint256 playersLength = newPlayers.length;
+-    for (uint256 i = 0; i < newPlayers.length; i++) {
++    for (uint256 i = 0; i < playersLength; i++) {
+            players.push(newPlayers[i]);
+        }
+```
+
+# Informational
 
 ### [I-1]: Solidity pragma should be specific, not wide
 Consider using a specific version of Solidity in your contracts instead of a wide version. For example, instead of `pragma solidity ^0.7.6;`, use `pragma solidity 0.7.6;`
@@ -501,29 +527,6 @@ It's best to keep code clean and fellow CEI (Checks, Effects, Interactions)
 +       require(success, "PuppyRaffle: Failed to send prize pool to winner");
 ```
 
-# Gas
-### [G-1] Unchanged state variables should be declared constant or immutable.
-
-Reading from storage is much more expensive than reading from a constant or immutable variable.
-
-Instances:
-- `PuppyRaffle::raffleDuration` should be `immutable`
-- `PuppyRaffle::commonImageUri` should be `constant`
-- `PuppyRaffle::rareImageUri` should be `constant`
-- `PuppyRaffle::legendaryImageUri` should be `constant`
-
-### [G-2] Storage variable in a loop should be cached
-
-Everytime you call `players.length` you read from storage, as opposed to memory which is more gas efficient.
-
-```diff
-+   uint256 playersLength = newPlayers.length;
--    for (uint256 i = 0; i < newPlayers.length; i++) {
-+    for (uint256 i = 0; i < playersLength; i++) {
-            players.push(newPlayers[i]);
-        }
-```
-
 ### [I-5] Use of "Magic" numbers is discouraged
 
 It can be confusing to see number literal in a codebase, and it's much more readable if the numbers are given a name.
@@ -541,7 +544,7 @@ Instead, you can use:
     uint256 public constant POOL_PERCENTAGE = 100;
 ```
 
-## [I-6]: Event is missing `indexed` fields
+### [I-6]: Event is missing `indexed` fields
 
 Index event fields make the field more quickly accessible to off-chain tools that parse events. However, note that each index field costs extra gas during emission, so it's not necessarily best to index the maximum allowed per event (three fields). Each event should use three indexed fields if there are three or more fields, and gas usage is not particularly of concern for the events in question. If there are fewer than three fields, all of the fields should be indexed.
 
@@ -567,4 +570,6 @@ Index event fields make the field more quickly accessible to off-chain tools tha
 
 It is good practice to emit the event whenever you changes the state of the smart contact.
 
-### [I-7] `PuppyRaffle::_isActivePlayer` is never used and should be removed 
+### [I-8] `PuppyRaffle::_isActivePlayer` is never used and should be removed 
+
+Dead code, it is only increases the deployment gas cost of the smart contract.
