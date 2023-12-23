@@ -122,6 +122,53 @@ contract ReentrancyAttacker {
 
 ```
 
+### [H-2] Weak Randomness in `PuppyRaffle::selectWinner` allows users to influence or predict the winner and influence or predict the winning puppy.
+
+**Description:** Hashing `msg.sender`, `block.timestamp`, and `block.difficulty` together creates a predictable find number. A predictable number is not a good random number. Malicious ysers can manipulate these values or know them ahead of time to choose the winner of the raffle themselves.
+
+
+*Note:* This means users can front-run this function and call `refund` if they see they are not the winner
+
+**Impact:** Any user can influence the winner of the raffle, winning the money and selecting the `rarest` puppy. Making the entire raffle worthless if it becomes a gas war as to who wins the raffle.
+
+**Proof Of Concept:**
+1. Validators can know ahead of time the `block.timestamp` and `block.difficulty` and use that to predict when/how to participate. See the [solidity blog on prevrandao](https://soliditydeveloper.com/prevrandao). `block.difficulty` was recently replaced with prevrandao.
+2. User can mine/manipulate their `msg.sender` value to result in their address being used to generate the winner!
+3. Users can revert their `selectWinner` transcation if they don't like the winner or resulting puppy.
+
+Using on-chain values as a randomness seed is a [well-documented attack vector](https://betterprogramming.pub/how-to-generate-truly-random-numbers-in-solidity-and-blockchain-9ced6472dbdf) in theblockchain space.
+
+
+**Recommended Mitigation:** Consider using a cryptographically provable random number generator such as chainlink VRF.
+
+### [H-3] Integer overflow of `PuppyRaffle::totalFees` loses fees
+
+**Description:** In solidity version prior to `0.8.0` integers were subject to integer overflows.
+
+```javascript
+uint64 myVar = type(uint64).max;
+// 18446744073709551615
+myVar = myVar + 1
+// myVar will be 0
+```
+
+**Impact:** In `PuppyRaffle::selectWinner`, `totalFees` are accumulated for the `feeAddress` to collect later in `PuppyRaffle::withdrawFees`. However, if the `totalFees` variable overflows, the `feeAddress` may not collect the correct the correct amount of fees, leaving fees permantely stuck in the contract.
+
+**Proof Of Concept:**
+<details> 
+<summary>Code</summary>
+
+Place the following into `PuppyRaffleTest.t.sol`
+
+```javascript
+
+```
+
+<details>
+
+**Recommended Mitigation:**
+
+
 ### [M-#] Looping through players array to check for duplicates in `PuppyRaffle::enterRaffle` is a potential denial of service (DoS) attack, incrementing gas costs for future entrants.
 
 **Description:** The `PuppyRaffle::enterRaffle` function loops through the `players` array to check for duplicates. However, the longer the `PuppyRaffle::Players` array is, the more checks a new player will have to make. This means the gas costs for players who enter right when the raffle stats will be dramatically lower than those whose enter later. Every Additional address in the `players` array, is an aadditional check the loop will have to make.
@@ -335,4 +382,21 @@ Everytime you call `players.length` you read from storage, as opposed to memory 
 +    for (uint256 i = 0; i < playersLength; i++) {
             players.push(newPlayers[i]);
         }
+```
+
+### [I-5] Use of "Magic" numbers is discouraged
+
+It can be confusing to see number literal in a codebase, and it's much more readable if the numbers are given a name.
+
+Examples:
+```Javascript
+    uint256 prizePool = (totalAmountCollected * 80) / 100;
+    uint256 fee = (totalAmountCollected * 20) / 100;
+```
+Instead, you can use:
+
+```javascript
+    uint256 public constant PRIZE_POOL_PERCENTAGE = 80;
+    uint256 public constant FEE_PERCENTAGE = 20;
+    uint256 public constant POOL_PERCENTAGE = 100;
 ```
