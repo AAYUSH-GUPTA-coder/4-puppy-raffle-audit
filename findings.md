@@ -155,21 +155,74 @@ myVar = myVar + 1
 **Impact:** In `PuppyRaffle::selectWinner`, `totalFees` are accumulated for the `feeAddress` to collect later in `PuppyRaffle::withdrawFees`. However, if the `totalFees` variable overflows, the `feeAddress` may not collect the correct the correct amount of fees, leaving fees permantely stuck in the contract.
 
 **Proof Of Concept:**
+1. We conclude the raffle of 100 players
+2. `totalFees` will be 
+```javascript
+(actual fees) totalFees: 1553255926290448384
+expectedFees: 20000000000000000000
+// and this will oberflow
+Difference:  18446744073709551616
+
+```
+
+4. You will not be able to withdraw, due to the line in `PuppyRaffle::withdraw`:
+
+```javascript
+require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
+```
+
+Althought you could use `selfdestruct` to send ETH to this contract in order for the values to match and withdraw the fees, this is clearly not the intended design of the protocol, there will be too much `balance` in the contract that the above `require` will be impossible to hit.
+
 <details> 
 <summary>Code</summary>
 
 Place the following into `PuppyRaffleTest.t.sol`
 
 ```javascript
+function test_Overflow() public {
+        vm.txGasPrice(1);
+        uint160 playersNum = 100;
+        address[] memory newPlayers = new address[](playersNum);
+        for (uint160 i; i < playersNum; i++) {
+            newPlayers[i] = address(i);
+        }
 
+        puppyRaffle.enterRaffle{value: entranceFee * playersNum}(newPlayers);
+        uint256 totalAmountCollected =  entranceFee * playersNum;
+        uint256 expectedFees = (totalAmountCollected * 20) / 100;
+        vm.warp(block.timestamp + duration + 100);
+
+        puppyRaffle.selectWinner();
+        uint256 totalFees = puppyRaffle.totalFees();
+        console.log("totalFees:", totalFees);
+        console.log("expectedFees:", expectedFees);
+        console.log("Difference: ", expectedFees - totalFees);
+        assertTrue(totalFees != expectedFees, "Values should be equal");
+        
+        // TotalFees should be 20 eth
+        // instead we get 1553255926290448384 == 1.55 eth
+        // which confirms the overflow error
+        assertTrue(totalFees < 20 ether, "Value should be equal to 20");
+    }
 ```
 
-<details>
+</details>
+</code>
 
-**Recommended Mitigation:**
+**Recommended Mitigation:** There are a few possible mitigations.
+
+1. Use a newer version of solidity, and a `uint256` instead of `uint64` for `PuppyRaffle::totalFees`
+2. You could also use the `SafeMath` library of OpenZepplin for version 0.7.6 of solidity, however you would still have a hard time with the `uint64` type if too many fees are collected.
+3. Remove the balance chcek from `PuppyRaffle::withdrawFees`
+
+```diff
+- require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
+```
+There are more attack vectors with that final require, so we recommend removing it regardless.
 
 
-### [M-#] Looping through players array to check for duplicates in `PuppyRaffle::enterRaffle` is a potential denial of service (DoS) attack, incrementing gas costs for future entrants.
+
+### [M-1] Looping through players array to check for duplicates in `PuppyRaffle::enterRaffle` is a potential denial of service (DoS) attack, incrementing gas costs for future entrants.
 
 **Description:** The `PuppyRaffle::enterRaffle` function loops through the `players` array to check for duplicates. However, the longer the `PuppyRaffle::Players` array is, the more checks a new player will have to make. This means the gas costs for players who enter right when the raffle stats will be dramatically lower than those whose enter later. Every Additional address in the `players` array, is an aadditional check the loop will have to make.
 
@@ -269,6 +322,93 @@ function testDosAttack() public {
 ```
 
 Alternatively, you can use [Openzeppelin's Enumerable Library](https://docs.openzeppelin.com/contracts/4.x/api/utils#EnumerableSet)
+
+### [M-2] Unsafe cast of `PuppyRaffle::fee` loses fees
+
+**Description:** In `PuppyRaffle::selectWinner` their is a type cast of a `uint256` to a `uint64`. This is an unsafe cast, and if the `uint256` is larger than `type(uint64).max`, the value will be truncated. 
+
+```javascript
+    function selectWinner() external {
+        require(block.timestamp >= raffleStartTime + raffleDuration, "PuppyRaffle: Raffle not over");
+        require(players.length > 0, "PuppyRaffle: No players in raffle");
+
+        uint256 winnerIndex = uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
+        address winner = players[winnerIndex];
+        uint256 fee = totalFees / 10;
+        uint256 winnings = address(this).balance - fee;
+@>      totalFees = totalFees + uint64(fee);
+        players = new address[](0);
+        emit RaffleWinner(winner, winnings);
+    }
+```
+
+The max value of a `uint64` is `18446744073709551615`. In terms of ETH, this is only ~`18` ETH. Meaning, if more than 18ETH of fees are collected, the `fee` casting will truncate the value. 
+
+**Impact:** This means the `feeAddress` will not collect the correct amount of fees, leaving fees permanently stuck in the contract.
+
+**Proof of Concept:** 
+
+1. A raffle proceeds with a little more than 18 ETH worth of fees collected
+2. The line that casts the `fee` as a `uint64` hits
+3. `totalFees` is incorrectly updated with a lower amount
+
+You can replicate this in foundry's chisel by running the following:
+
+```javascript
+uint256 max = type(uint64).max
+uint256 fee = max + 1
+uint64(fee)
+// prints 0
+```
+
+**Recommended Mitigation:** Set `PuppyRaffle::totalFees` to a `uint256` instead of a `uint64`, and remove the casting. Their is a comment which says:
+
+```javascript
+// We do some storage packing to save gas
+```
+But the potential gas saved isn't worth it if we have to recast and this bug exists. 
+
+```diff
+-   uint64 public totalFees = 0;
++   uint256 public totalFees = 0;
+.
+.
+.
+    function selectWinner() external {
+        require(block.timestamp >= raffleStartTime + raffleDuration, "PuppyRaffle: Raffle not over");
+        require(players.length >= 4, "PuppyRaffle: Need at least 4 players");
+        uint256 winnerIndex =
+            uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
+        address winner = players[winnerIndex];
+        uint256 totalAmountCollected = players.length * entranceFee;
+        uint256 prizePool = (totalAmountCollected * 80) / 100;
+        uint256 fee = (totalAmountCollected * 20) / 100;
+-       totalFees = totalFees + uint64(fee);
++       totalFees = totalFees + fee;
+```
+
+### [M-3] Smart contract wallets raffle winners without a `receive` or a `fallabck` function will block the start of a new contest
+
+**Description:** The `PuppyRaffle::selectWinner` function is responsible for resetting the lottery. However, if the winner is a smart contact wallet that rejects payment, the lottery would not be able to restart.
+
+Users could easily call the `selectWinner` function again and non-wallet entrants could enter, but it could cost a lot due to the duplicate check and a lottery reset could get very challenging.
+
+**Impact:** The `PuppyRaffle::selectWinner` function could revert many times, making a lottery reset difficult.
+
+Also, true winners would not get paid out and someone else could take their money.
+
+**Proof Of Concept:**
+1. 10 smart contract wallets enter the lottery without a fallback or receive function.
+2. The lottery ends
+3. The `selectWinner` function wouldn't work, even though the lottery is over!
+
+**Recommended Mitigation:** There are a few options to mitigate this issue.
+
+1. Do not allow smart contract wallet entrants (not recommended)
+2. Create a mapping of addresses -> payout so winners can pull their funds out themselves, putting the owness on the winner to claim their prize. (Recommended)
+
+> Pull over Push
+
 
 # Low
 ### [L-1] `PuppyRaffle::getActivePlayerIndex` returns 0 for non-existent players and for players at index 0, causing a player at index 0 to incorrectly think they have not entered the raffle.
@@ -400,3 +540,31 @@ Instead, you can use:
     uint256 public constant FEE_PERCENTAGE = 20;
     uint256 public constant POOL_PERCENTAGE = 100;
 ```
+
+## [I-6]: Event is missing `indexed` fields
+
+Index event fields make the field more quickly accessible to off-chain tools that parse events. However, note that each index field costs extra gas during emission, so it's not necessarily best to index the maximum allowed per event (three fields). Each event should use three indexed fields if there are three or more fields, and gas usage is not particularly of concern for the events in question. If there are fewer than three fields, all of the fields should be indexed.
+
+- Found in src/PuppyRaffle.sol [Line: 59](src/PuppyRaffle.sol#L59)
+
+	```solidity
+	    event RaffleEnter(address[] newPlayers);
+	```
+
+- Found in src/PuppyRaffle.sol [Line: 60](src/PuppyRaffle.sol#L60)
+
+	```solidity
+	    event RaffleRefunded(address player);
+	```
+
+- Found in src/PuppyRaffle.sol [Line: 61](src/PuppyRaffle.sol#L61)
+
+	```solidity
+	    event FeeAddressChanged(address newFeeAddress);
+	```
+
+### [I-7] State changes are missing events
+
+It is good practice to emit the event whenever you changes the state of the smart contact.
+
+### [I-7] `PuppyRaffle::_isActivePlayer` is never used and should be removed 
